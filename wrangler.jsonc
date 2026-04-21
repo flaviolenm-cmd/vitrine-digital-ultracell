@@ -1,0 +1,13 @@
+{
+  "name": "vitrine-digital-ultracell",
+  "pages_build_output_dir": ".",
+  "compatibility_date": "2026-04-21",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "vitrine-ultracell-db",
+      "database_id": "76c729db-5134-4761-881b-3e4d00b69204",
+      "preview_database_id": "COLE_AQUI_O_UUID_REAL"
+    }
+  ]
+}

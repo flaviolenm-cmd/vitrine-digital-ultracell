@@ -1,0 +1,18 @@
+{
+  "name": "vitrine-digital-ultracell",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler pages dev . --compatibility-date=2026-04-21",
+    "deploy": "wrangler pages deploy .",
+    "d1:create": "wrangler d1 create vitrine-ultracell-db",
+    "d1:migrations:apply": "wrangler d1 migrations apply DB --remote",
+    "d1:migrations:apply:local": "wrangler d1 migrations apply DB --local",
+    "d1:seed": "wrangler d1 execute DB --remote --file=./migrations/0002_seed.sql",
+    "backup:to-sql": "node ./scripts/backup-to-sql.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "^4.14.4"
+  }
+}
