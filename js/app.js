@@ -154,7 +154,7 @@ function renderLogin() {
     <div class="auth-card">
       <div class="brand-lockup"><h1>ULTRACELL</h1><span>peças</span></div>
       <form id="login-form" class="auth-grid">
-        <div class="field"><label>Login</label><input class="input" name="login" placeholder="Login" required></div>
+        <div class="field"><label>Login</label><input class="input" name="login" placeholder="Login" inputmode="numeric" pattern="[0-9]*" required></div>
         <div class="field"><label>Senha</label><input class="input" name="password" type="password" placeholder="Digite sua senha" required></div>
         <div class="auth-actions">
           <button class="btn btn-primary" type="submit">Entrar</button>
@@ -556,7 +556,7 @@ function productCard(product) {
           <span class="small-text">Quantidade</span>
           <div class="qty-stepper">
             <button class="btn btn-secondary btn-small" type="button" data-qty-step="${product.id}|-1" ${unavailable ? 'disabled' : ''}>−</button>
-            <input class="input qty-inline-input" type="number" min="1" value="${qty}" data-card-qty="${product.id}" ${unavailable ? 'disabled' : ''}>
+            <input class="input qty-inline-input" type="number" min="1" value="${qty}" inputmode="numeric" pattern="[0-9]*" data-card-qty="${product.id}" ${unavailable ? 'disabled' : ''}>
             <button class="btn btn-secondary btn-small" type="button" data-qty-step="${product.id}|1" ${unavailable ? 'disabled' : ''}>+</button>
           </div>
         </div>
@@ -864,7 +864,7 @@ function openCheckoutModal(singleProductId = null, singleQty = 1) {
       </div>
       <div class="field"><label>Recebimento</label><select class="select" name="deliveryType"><option value="retirada">Retirada</option><option value="entrega">Entrega</option></select></div>
       <div class="field"><label>Pagamento</label><select class="select" name="paymentMethod" id="payment-method"><option value="dinheiro">Dinheiro</option><option value="pix">Pix</option><option value="debito">Débito</option><option value="credito">Crédito</option>${user.creditEnabled ? '<option value="nota">Pagar na nota</option>' : ''}</select></div>
-      <div class="field hidden" id="change-field"><label>Troco para</label><input class="input" type="number" step="0.01" min="0" name="changeFor"></div>
+      <div class="field hidden" id="change-field"><label>Troco para</label><input class="input" type="number" step="0.01" min="0" inputmode="decimal" name="changeFor" inputmode="decimal"></div>
       <div class="field hidden" id="pix-field"><label>Chave Pix</label><div class="actions-row"><input class="input" value="${defaultPixKey}" readonly><button class="btn btn-secondary btn-small" type="button" id="copy-pix">Copiar chave</button></div></div>
       <div class="field"><label>Observações</label><textarea class="textarea" name="notes" placeholder="Entrega, referência, urgência..."></textarea></div>
       <div class="field"><label>Endereço</label><input class="input" name="address" value="${escapeHtml(user.address || '')}"></div>
@@ -1155,7 +1155,7 @@ function openProductModal(id = null) {
       <div class="field"><label>Categoria</label><input class="input" name="category" value="${escapeHtml(product?.category || '')}" required></div>
       <div class="field"><label>Modelo</label><input class="input" name="model" value="${escapeHtml(product?.model || '')}" required></div>
       <div class="field"><label>Nome</label><input class="input" name="name" value="${escapeHtml(product?.name || '')}" required></div>
-      <div class="field"><label>Preço</label><input class="input" type="number" step="0.01" min="0" name="price" value="${product?.price ?? ''}" required></div>
+      <div class="field"><label>Preço</label><input class="input" type="number" step="0.01" min="0" inputmode="decimal" name="price" inputmode="decimal" value="${product?.price ?? ''}" required></div>
       <div class="field"><label>Código interno</label><input class="input" name="code" value="${escapeHtml(product?.code || '')}" required></div>
       <div class="field field-media" style="grid-column:1/-1">
         <label>Imagem do produto</label>
@@ -1212,12 +1212,12 @@ function openUserModal(id = null) {
   const user = id ? getUserById(id) : null;
   const modal = openModal(user ? 'Editar usuário' : 'Novo usuário', `
     <form id="user-form" class="grid grid-2">
-      <div class="field"><label>CPF</label><input class="input" id="cpf-mask" name="cpf" value="${escapeHtml(user?.cpf || '')}" required></div>
-      <div class="field"><label>Número do sistema</label><input class="input" name="systemNumber" value="${escapeHtml(user?.systemNumber || '')}"></div>
+      <div class="field"><label>CPF</label><input class="input" id="cpf-mask" name="cpf" value="${escapeHtml(user?.cpf || '')}" inputmode="numeric" pattern="[0-9]*" required></div>
+      <div class="field"><label>Número do sistema</label><input class="input" name="systemNumber" value="${escapeHtml(user?.systemNumber || '')}" inputmode="numeric" pattern="[0-9]*"></div>
       <div class="field"><label>Nome completo</label><input class="input" name="fullName" value="${escapeHtml(user?.fullName || '')}" required></div>
       <div class="field"><label>Nome da loja</label><input class="input" name="storeName" value="${escapeHtml(user?.storeName || '')}" required></div>
       <div class="field"><label>Endereço</label><input class="input" name="address" value="${escapeHtml(user?.address || '')}" required></div>
-      <div class="field"><label>Contato</label><input class="input" id="phone-mask" name="contact" value="${escapeHtml(user?.contact || '')}" required></div>
+      <div class="field"><label>Contato</label><input class="input" id="phone-mask" name="contact" value="${escapeHtml(user?.contact || '')}" inputmode="tel" pattern="[0-9]*" required></div>
       <div class="field"><label>Perfil de acesso</label><select class="select" name="role"><option value="user" ${(user?.role || user?.type || 'user') === 'user' ? 'selected' : ''}>Usuário</option><option value="admin" ${(user?.role || user?.type) === 'admin' ? 'selected' : ''}>ADM</option><option value="deliverer" ${(user?.role || user?.type) === 'deliverer' ? 'selected' : ''}>Entregador</option></select></div>
       <div class="field field-media" style="grid-column:1/-1">
         <label>Foto do usuário</label>
@@ -1230,7 +1230,7 @@ function openUserModal(id = null) {
         <div class="media-preview-card avatar-preview ${user?.photo ? '' : 'is-empty'}" id="user-photo-preview">${user?.photo ? `<img src="${escapeHtml(user.photo)}" alt="Prévia do usuário">` : `<span>${escapeHtml(initialsFromName(user?.fullName || 'Usuário'))}</span>`}</div>
       </div>
       <div class="field"><label>Crédito ativo</label><select class="select" id="credit-toggle" name="creditEnabled"><option value="true" ${user?.creditEnabled ? 'selected' : ''}>Sim</option><option value="false" ${!user?.creditEnabled ? 'selected' : ''}>Não</option></select></div>
-      <div class="field" id="credit-limit-field"><label>Limite de crédito</label><input class="input" type="number" step="0.01" min="0" name="creditLimit" value="${user?.creditLimit ?? 0}"></div>
+      <div class="field" id="credit-limit-field"><label>Limite de crédito</label><input class="input" type="number" step="0.01" min="0" inputmode="decimal" name="creditLimit" inputmode="decimal" value="${user?.creditLimit ?? 0}"></div>
       <div class="field"><label>Ativo</label><select class="select" name="active"><option value="true" ${user?.active !== false ? 'selected' : ''}>Sim</option><option value="false" ${user?.active === false ? 'selected' : ''}>Não</option></select></div>
       <div class="footer-actions" style="grid-column:1/-1"><button class="btn btn-primary" type="submit">Salvar</button></div>
     </form>`);

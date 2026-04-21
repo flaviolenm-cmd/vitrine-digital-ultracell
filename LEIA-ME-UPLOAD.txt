@@ -1,0 +1,24 @@
+VITRINE DIGITAL ULTRACELL — PACOTE LIMPO PARA UPLOAD DIRETO
+
+Esta versão foi preparada especificamente para subir no Cloudflare Pages
+pelo método:
+Pages > Drag and drop your files
+
+O que foi limpo:
+- removidas dependências desnecessárias do pacote final
+- api.js ajustado para modo estático
+- sem backend/Functions/D1 neste ZIP
+- pronto para uso como site estático
+
+COMO SUBIR
+1. Entre no Cloudflare
+2. Vá em Workers & Pages
+3. Clique em Criar aplicativo
+4. Escolha Pages
+5. Escolha Drag and drop your files
+6. Envie este ZIP
+7. Clique em Deploy site
+
+OBSERVAÇÃO
+- Esta versão funciona em modo estático
+- Se quiser banco online real, aí use a versão com Git + Functions + D1
