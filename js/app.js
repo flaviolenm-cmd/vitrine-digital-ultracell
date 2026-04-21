@@ -2,7 +2,7 @@ import { seedData } from './seed.js';
 import { login } from './auth/auth.js';
 import { getSession, clearSession } from './auth/session.js';
 import { storage } from './storage.js';
-import { money, maskCPF, maskPhone, onlyDigits, formatDateTime, escapeHtml, downloadFile, copyText } from './utils.js';
+import { money, maskCPF, maskPhone, onlyDigits, formatDateTime, escapeHtml, downloadFile, copyText, compressImageFile } from './utils.js';
 import { getProducts, filterProducts, createProduct, updateProduct, deleteProduct, duplicateProduct, getProductAutocomplete } from './modules/products.js';
 import { getUsers, createUser, updateUser, filterUsers, getUserById } from './modules/users.js';
 import { addToCart, getDetailedCart, updateCartQty, removeFromCart, clearCart } from './modules/cart.js';
@@ -12,10 +12,34 @@ import { getDashboardData } from './modules/dashboard.js';
 import { openModal } from './ui/modal.js';
 import { showToast } from './ui/toast.js';
 import { defaultPixKey } from './data/mock-data.js';
+import { detectRemoteEnabled, syncRemoteSnapshot, remoteLogin, isRemoteEnabled, remoteResetSystem } from './api.js';
 
 seedData();
+detectRemoteEnabled().then((enabled) => { state.connection.remote = Boolean(enabled); if (enabled) syncRemoteSnapshot(); renderConnectionIndicator(); });
+window.addEventListener('udp:data-updated', () => render());
+window.addEventListener('online', () => { state.connection.online = true; renderConnectionIndicator(); });
+window.addEventListener('offline', () => { state.connection.online = false; renderConnectionIndicator(); });
+
+function saveUiState() {
+  storage.set(storage.keys.ui, {
+    adminSidebarCollapsed: state.adminSidebarCollapsed,
+    storeSidebarCollapsed: state.storeSidebarCollapsed
+  });
+}
+
+function renderConnectionIndicator() {
+  const indicator = document.getElementById('sync-indicator');
+  if (!indicator) return;
+  const online = state.connection.online;
+  indicator.classList.toggle('is-online', online);
+  indicator.classList.toggle('is-offline', !online);
+  indicator.setAttribute('title', online ? (state.connection.remote ? 'Online e sincronizando' : 'Online') : 'Offline');
+  indicator.innerHTML = online ? '<span class="sync-dot"></span><span class="sync-wheel">↻</span>' : '<span class="sync-dot"></span><span class="sync-x">✕</span>';
+}
+
 
 const app = document.getElementById('app');
+const persistedUi = storage.get(storage.keys.ui, {});
 const state = {
   session: getSession(),
   route: 'dashboard',
@@ -26,6 +50,9 @@ const state = {
   orderStatusFilter: '',
   productQtys: {},
   userFavoriteFilter: false,
+  adminSidebarCollapsed: Boolean(persistedUi.adminSidebarCollapsed ?? true),
+  storeSidebarCollapsed: Boolean(persistedUi.storeSidebarCollapsed ?? false),
+  connection: { online: navigator.onLine, remote: false }
 };
 
 const adminRoutes = {
@@ -127,36 +154,42 @@ function renderLogin() {
     <div class="auth-card">
       <div class="brand-lockup"><h1>ULTRACELL</h1><span>peças</span></div>
       <form id="login-form" class="auth-grid">
-        <div class="field"><label>Login</label><input class="input" name="login" placeholder="CPF do cliente ou login ADM" required></div>
+        <div class="field"><label>Login</label><input class="input" name="login" placeholder="Login" required></div>
         <div class="field"><label>Senha</label><input class="input" name="password" type="password" placeholder="Digite sua senha" required></div>
         <div class="auth-actions">
           <button class="btn btn-primary" type="submit">Entrar</button>
-          <button class="btn btn-secondary" type="button" id="demo-admin">Demo ADM</button>
         </div>
-        <div class="helper">Usuário: <strong>12345678900</strong> / <strong>4567</strong><br>ADM: <strong>admin</strong> / <strong>1234</strong></div>
       </form>
     </div>
   </div>`;
 
-  document.getElementById('login-form').onsubmit = (e) => {
+  document.getElementById('login-form').onsubmit = async (e) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
-    const result = login(String(fd.get('login') || '').trim(), String(fd.get('password') || '').trim());
-    if (!result.ok) return showToast(result.message);
+    const loginValue = String(fd.get('login') || '').trim();
+    const password = String(fd.get('password') || '').trim();
+    let result = await remoteLogin(loginValue, password);
+    if (!result.ok) result = login(loginValue, password);
+    if (!result.ok) return showToast(result.message || 'Login ou senha inválidos.');
     state.route = (result.session.type === 'admin' || result.session.type === 'deliverer') ? getAdminLandingRoute() : 'store';
     render();
   };
-  document.getElementById('demo-admin').onclick = () => {
-    const result = login('admin', '1234');
-    if (result.ok) render();
-  };
 }
 
+
 function shell(inner, sidebar, options = {}) {
-  const { showDataActions = true, floating = '' } = options;
+  const {
+    showDataActions = false,
+    floating = '',
+    sidebarMode = 'admin',
+    sidebarCollapsed = false,
+    bottomTools = ''
+  } = options;
   const userLabel = state.session.storeName ? `${escapeHtml(state.session.name)} · ${escapeHtml(state.session.storeName)}` : escapeHtml(state.session.name);
+  const toggleId = sidebarMode === 'store' ? 'store-sidebar-toggle' : 'admin-sidebar-toggle';
+  const collapsedClass = sidebarCollapsed ? 'is-collapsed' : '';
   return `
-  <div class="app-shell">
+  <div class="app-shell shell-${sidebarMode}">
     <header class="brand-bar premium-bar">
       <div class="brand-meta brand-meta-left">
         <div class="user-chip">${userLabel}</div>
@@ -168,17 +201,23 @@ function shell(inner, sidebar, options = {}) {
         ${showDataActions ? `<button class="btn btn-secondary btn-small" id="backup-btn">Backup JSON</button>
         <label class="btn btn-secondary btn-small" for="restore-input">Restaurar</label>
         <input id="restore-input" type="file" accept="application/json" class="hidden">` : ''}
+        <button class="sync-indicator ${state.connection.online ? 'is-online' : 'is-offline'}" id="sync-indicator" type="button" aria-label="Indicador de conexão"></button>
         <button class="btn btn-primary btn-small" id="logout-btn">Sair</button>
       </div>
     </header>
-    <div class="main-shell">
-      <aside class="sidebar">${sidebar}</aside>
-      <main class="content">${inner}</main>
+    <div class="main-shell ${sidebarMode}-layout ${collapsedClass}">
+      <aside class="sidebar ${sidebarMode}-sidebar ${collapsedClass}">
+        <button class="sidebar-toggle" id="${toggleId}" type="button" aria-label="Recolher ou expandir painel">
+          <span class="toggle-icon">${sidebarCollapsed ? '»' : '«'}</span>
+          <span class="toggle-label">${sidebarCollapsed ? 'Abrir' : 'Recolher'}</span>
+        </button>
+        <div class="sidebar-scroll">${sidebar}</div>
+      </aside>
+      <main class="content">${inner}${bottomTools}</main>
     </div>
     ${floating}
   </div>`;
 }
-
 function renderStore() {
   const session = state.session;
   const user = getUserById(session.id);
@@ -219,29 +258,37 @@ function renderStore() {
       <div class="catalog-grid store-catalog-grid">${products.map(productCard).join('') || '<div class="empty-state">Nenhum produto encontrado.</div>'}</div>
     </section>
   `, `
-    <div class="profile-panel soft-card">
-      <div class="profile-panel-top profile-panel-hero">
-        ${renderImageFrame(user?.photo, user?.fullName || 'Cliente', initialsFromName(user?.fullName || 'Cliente'), 'user')}
-        <div class="profile-meta profile-meta-centered">
-          <strong>${escapeHtml(user?.fullName || state.session.name)}</strong>
-          <span>${escapeHtml(user?.storeName || 'Cliente Ultracell')}</span>
-          <span>${escapeHtml(maskPhone(user?.contact || ''))}</span>
+    <div class="profile-toggle-card soft-card ${state.storeSidebarCollapsed ? 'is-collapsed' : ''}">
+      <button class="profile-collapse-btn" id="profile-panel-toggle" type="button">
+        <span>Perfil</span>
+        <strong>${state.storeSidebarCollapsed ? 'Abrir' : 'Recolher'}</strong>
+      </button>
+      <div class="profile-panel soft-card">
+        <div class="profile-panel-top profile-panel-hero">
+          ${renderImageFrame(user?.photo, user?.fullName || 'Cliente', initialsFromName(user?.fullName || 'Cliente'), 'user')}
+          <div class="profile-meta profile-meta-centered">
+            <strong>${escapeHtml(user?.fullName || state.session.name)}</strong>
+            <span>${escapeHtml(user?.storeName || 'Cliente Ultracell')}</span>
+            <span>${escapeHtml(maskPhone(user?.contact || ''))}</span>
+          </div>
         </div>
+        <div class="profile-subdata small-text">CPF: ${escapeHtml(maskCPF(user?.cpf || ''))}</div>
+        <div class="profile-credit-panel">
+          <div><span>Limite</span><strong>${user?.creditEnabled ? money(metrics.limitCredit) : 'Desativado'}</strong></div>
+          <div><span>Usado</span><strong>${user?.creditEnabled ? money(metrics.usedCredit) : '-'}</strong></div>
+          <div><span>Disponível</span><strong>${user?.creditEnabled ? money(metrics.availableCredit) : '-'}</strong></div>
+        </div>
+        <div class="profile-subdata small-text">Último pedido: ${metrics.lastOrder ? formatDateTime(metrics.lastOrder.createdAt) : 'Sem pedidos'}</div>
+        <button class="btn btn-secondary btn-small" id="edit-profile-btn">Editar perfil</button>
       </div>
-      <div class="profile-subdata small-text">CPF: ${escapeHtml(maskCPF(user?.cpf || ''))}</div>
-      <div class="profile-credit-panel">
-        <div><span>Limite</span><strong>${user?.creditEnabled ? money(metrics.limitCredit) : 'Desativado'}</strong></div>
-        <div><span>Usado</span><strong>${user?.creditEnabled ? money(metrics.usedCredit) : '-'}</strong></div>
-        <div><span>Disponível</span><strong>${user?.creditEnabled ? money(metrics.availableCredit) : '-'}</strong></div>
-      </div>
-      <div class="profile-subdata small-text">Último pedido: ${metrics.lastOrder ? formatDateTime(metrics.lastOrder.createdAt) : 'Sem pedidos'}</div>
-      <button class="btn btn-secondary btn-small" id="edit-profile-btn">Editar perfil</button>
     </div>
     <button class="btn side-btn active">Catálogo</button>
     <button class="btn side-btn" id="my-orders-btn">Meus pedidos <span class="side-counter">${userOrders.length}</span></button>
     <button class="btn side-btn" id="favorite-filter-sidebar">Favoritos <span class="side-counter">${favoriteIds.length}</span></button>
   `, {
     showDataActions: false,
+    sidebarMode: 'store',
+    sidebarCollapsed: state.storeSidebarCollapsed,
     floating: `<button class="floating-cart-btn" id="floating-cart-btn" aria-label="Abrir carrinho"><span class="floating-cart-count">${cart.reduce((a,i)=>a+i.quantity,0)}</span><div><strong>Carrinho</strong><small>${money(total)} · ${openOrders} pedido(s) em aberto</small></div></button>`
   });
 
@@ -283,7 +330,24 @@ function renderAdmin() {
     `).join('')}
   `;
 
-  app.innerHTML = shell(contentByRoute[state.route] || contentByRoute[getAdminLandingRoute()], sidebar);
+  const bottomTools = state.session?.type === 'deliverer' ? '' : `
+    <section class="section admin-bottom-tools">
+      <div class="panel panel-tools">
+        <div class="section-title"><div><h3>Ferramentas e manutenção</h3><div class="inline-note">Ações secundárias, backup e reset seguro do projeto.</div></div></div>
+        <div class="admin-tools-grid">
+          <button class="btn btn-secondary" id="backup-btn">Backup JSON</button>
+          <label class="btn btn-secondary" for="restore-input">Restaurar</label>
+          <input id="restore-input" type="file" accept="application/json" class="hidden">
+          <button class="btn btn-danger" id="system-reset-btn">Reset total do sistema</button>
+        </div>
+      </div>
+    </section>`;
+  app.innerHTML = shell(contentByRoute[state.route] || contentByRoute[getAdminLandingRoute()], sidebar, {
+    showDataActions: false,
+    sidebarMode: 'admin',
+    sidebarCollapsed: state.adminSidebarCollapsed,
+    bottomTools
+  });
   bindGlobalShell();
   bindAdminEvents();
 }
@@ -434,10 +498,35 @@ function initialsFromName(value = '') {
   return parts.map(part => part[0]?.toUpperCase() || '').join('') || 'UP';
 }
 
+function normalizeImageValue(value = '') {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  return raw.startsWith('data:image/') ? raw.replace(/\s+/g, '') : raw;
+}
+
+function attachPreviewImage(container, value, altText, fallbackHtml) {
+  const src = normalizeImageValue(value);
+  container.classList.toggle('is-empty', !src);
+  if (!src) {
+    container.innerHTML = fallbackHtml;
+    return;
+  }
+  container.innerHTML = '';
+  const img = document.createElement('img');
+  img.alt = altText;
+  img.src = src;
+  img.onerror = () => {
+    container.classList.add('is-empty');
+    container.innerHTML = fallbackHtml;
+  };
+  container.appendChild(img);
+}
+
 function renderImageFrame(image, alt, fallback, kind = 'product') {
   const cls = kind === 'user' ? 'user-photo-frame' : 'product-photo';
-  if (image) {
-    return `<div class="${cls}"><img src="${escapeHtml(image)}" alt="${escapeHtml(alt)}"></div>`;
+  const src = normalizeImageValue(image);
+  if (src) {
+    return `<div class="${cls}"><img src="${src}" alt="${escapeHtml(alt)}"></div>`;
   }
   return `<div class="${cls} fallback"><span>${escapeHtml(fallback)}</span></div>`;
 }
@@ -642,6 +731,7 @@ function actionButton(id, status, label, klass='btn-secondary') {
   return `<button class="btn ${klass} btn-small" data-order-status="${id}|${status}">${label}</button>`;
 }
 
+
 function bindGlobalShell() {
   document.getElementById('logout-btn').onclick = () => { clearSession(); render(); };
   const backupBtn = document.getElementById('backup-btn');
@@ -663,8 +753,62 @@ function bindGlobalShell() {
       render();
     };
   }
-}
 
+  const adminToggle = document.getElementById('admin-sidebar-toggle');
+  if (adminToggle) {
+    adminToggle.onclick = () => {
+      state.adminSidebarCollapsed = !state.adminSidebarCollapsed;
+      saveUiState();
+      renderAdmin();
+    };
+  }
+
+  const storeToggle = document.getElementById('store-sidebar-toggle');
+  if (storeToggle) {
+    storeToggle.onclick = () => {
+      state.storeSidebarCollapsed = !state.storeSidebarCollapsed;
+      saveUiState();
+      renderStore();
+    };
+  }
+
+  const profileToggle = document.getElementById('profile-panel-toggle');
+  if (profileToggle) {
+    profileToggle.onclick = () => {
+      state.storeSidebarCollapsed = !state.storeSidebarCollapsed;
+      saveUiState();
+      renderStore();
+    };
+  }
+
+  const resetBtn = document.getElementById('system-reset-btn');
+  if (resetBtn) {
+    resetBtn.onclick = async () => {
+      const confirmText = window.prompt('Digite RESETAR para apagar os dados e iniciar o projeto do zero.');
+      if (confirmText !== 'RESETAR') return showToast('Reset cancelado.');
+      let preservedAdmin = null;
+      const admins = storage.get(storage.keys.admins, []);
+      if (state.session?.type === 'admin') {
+        preservedAdmin = admins.find(admin => admin.login === state.session.login) || null;
+      }
+      const remotePayload = preservedAdmin ? {
+        preserve_admin: true,
+        admin: {
+          login: preservedAdmin.login,
+          password: preservedAdmin.password,
+          name: preservedAdmin.name,
+          full_name: preservedAdmin.name
+        }
+      } : {};
+      if (isRemoteEnabled()) await remoteResetSystem(remotePayload);
+      await storage.resetAllData({ preserveAdmin: preservedAdmin });
+      showToast('Sistema resetado. Base limpa para novo cliente.');
+      render();
+    };
+  }
+
+  renderConnectionIndicator();
+}
 function bindStoreEvents() {
   document.getElementById('store-search').oninput = e => { state.filters.search = e.target.value; renderStore(); };
   document.getElementById('filter-brand').onchange = e => { state.filters.brand = e.target.value; renderStore(); };
@@ -692,10 +836,10 @@ function bindStoreEvents() {
 
   document.querySelectorAll('[data-favorite-toggle]').forEach(btn => btn.onclick = () => { toggleFavorite(btn.dataset.favoriteToggle); renderStore(); });
   document.getElementById('favorite-filter-btn').onclick = () => { state.userFavoriteFilter = !state.userFavoriteFilter; renderStore(); };
-  document.getElementById('favorite-filter-sidebar').onclick = () => { state.userFavoriteFilter = !state.userFavoriteFilter; renderStore(); };
+  document.getElementById('favorite-filter-sidebar')?.addEventListener('click', () => { state.userFavoriteFilter = !state.userFavoriteFilter; renderStore(); });
   document.getElementById('floating-cart-btn').onclick = () => openCartModal();
-  document.getElementById('my-orders-btn').onclick = () => openMyOrdersModal();
-  document.getElementById('edit-profile-btn').onclick = () => openProfileModal();
+  document.getElementById('my-orders-btn')?.addEventListener('click', () => openMyOrdersModal());
+  document.getElementById('edit-profile-btn')?.addEventListener('click', () => openProfileModal());
 }
 function openCheckoutModal(singleProductId = null, singleQty = 1) {
   const user = getUserById(state.session.id);
@@ -926,7 +1070,7 @@ function openProfileModal() {
   photoFile.onchange = async () => {
     const file = photoFile.files?.[0];
     if (!file) return;
-    const dataUrl = await fileToDataUrl(file);
+    const dataUrl = await compressImageFile(file, { maxWidth: 960, maxHeight: 960, quality: 0.8 });
     photoValue.value = dataUrl;
     syncPreview();
   };
@@ -1034,9 +1178,8 @@ function openProductModal(id = null) {
   const productImagePreview = modal.querySelector('#product-image-preview');
 
   const syncProductPreview = () => {
-    const value = String(productImageValue.value || '').trim();
-    productImagePreview.classList.toggle('is-empty', !value);
-    productImagePreview.innerHTML = value ? `<img src="${escapeHtml(value)}" alt="Prévia do produto">` : '<span>Prévia da imagem do produto</span>';
+    productImageValue.value = normalizeImageValue(productImageValue.value);
+    attachPreviewImage(productImagePreview, productImageValue.value, 'Prévia do produto', '<span>Prévia da imagem do produto</span>');
   };
 
   productImageTrigger.onclick = () => productImageFile.click();
@@ -1044,10 +1187,10 @@ function openProductModal(id = null) {
   productImageFile.onchange = async () => {
     const file = productImageFile.files?.[0];
     if (!file) return;
-    const dataUrl = await fileToDataUrl(file);
-    productImageValue.value = dataUrl;
+    const dataUrl = await compressImageFile(file, { maxWidth: 1280, maxHeight: 1280, quality: 0.78 });
+    productImageValue.value = normalizeImageValue(dataUrl);
     syncProductPreview();
-    showToast('Imagem do produto carregada.');
+    showToast('Imagem do produto otimizada e carregada.');
   };
   syncProductPreview();
 
@@ -1057,6 +1200,7 @@ function openProductModal(id = null) {
     const payload = Object.fromEntries(fd.entries());
     payload.price = Number(payload.price || 0);
     payload.active = payload.active === 'true';
+    payload.image = normalizeImageValue(payload.image);
     if (id) updateProduct(id, payload); else createProduct(payload);
     modal.remove();
     showToast('Produto salvo.');
@@ -1115,7 +1259,7 @@ function openUserModal(id = null) {
     const dataUrl = await fileToDataUrl(file);
     userPhotoValue.value = dataUrl;
     syncUserPreview();
-    showToast('Foto do usuário carregada.');
+    showToast('Foto do usuário otimizada e carregada.');
   };
   modal.querySelector('[name="fullName"]').oninput = syncUserPreview;
   syncCredit();

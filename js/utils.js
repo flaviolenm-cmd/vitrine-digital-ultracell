@@ -65,3 +65,49 @@ export async function copyText(text) {
     return false;
   }
 }
+
+
+export async function compressImageFile(file, options = {}) {
+  const {
+    maxWidth = 1400,
+    maxHeight = 1400,
+    quality = 0.82,
+    mimeType = 'image/jpeg'
+  } = options;
+
+  const dataUrl = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('Não foi possível ler a imagem.'));
+    reader.readAsDataURL(file);
+  });
+
+  const image = await new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('Não foi possível processar a imagem.'));
+    img.src = dataUrl;
+  });
+
+  let width = image.width || 0;
+  let height = image.height || 0;
+  if (!width || !height) return dataUrl;
+
+  const ratio = Math.min(1, maxWidth / width, maxHeight / height);
+  width = Math.max(1, Math.round(width * ratio));
+  height = Math.max(1, Math.round(height * ratio));
+
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, width, height);
+  ctx.drawImage(image, 0, 0, width, height);
+
+  try {
+    return canvas.toDataURL(mimeType, quality);
+  } catch {
+    return canvas.toDataURL('image/jpeg', quality);
+  }
+}

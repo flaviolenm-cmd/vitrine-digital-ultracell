@@ -1,5 +1,6 @@
 import { storage } from '../storage.js';
 import { slugId } from '../utils.js';
+import { remoteMutate } from '../api.js';
 
 function normalizeAvailability(payload = {}) {
   const status = payload.availabilityStatus
@@ -29,17 +30,24 @@ export function createProduct(payload) {
   products.unshift(product);
   saveProducts(products);
   storage.pushLog('product_created', { productId: product.id, name: product.name });
+  remoteMutate('products', 'POST', {
+    brand: product.brand, category: product.category, model: product.model, name: product.name,
+    price: Number(product.price || 0), internal_code: product.code || '', image_url: product.image || '',
+    availability_status: product.availabilityStatus || 'available'
+  });
   return product;
 }
 export function updateProduct(id, patch) {
   const products = getProducts().map(p => p.id === id ? normalizeProduct({ ...p, ...patch }) : p);
   saveProducts(products);
   storage.pushLog('product_updated', { productId: id, patch: normalizeProduct(patch) });
+  remoteMutate('products', 'PUT', { ...normalizeProduct({ id, ...getProducts().find(p => p.id === id), ...patch }), internal_code: patch.code || patch.internal_code, image_url: patch.image || patch.image_url, availability_status: patch.availabilityStatus || patch.availability_status }, id);
 }
 export function deleteProduct(id) {
   const products = getProducts().filter(p => p.id !== id);
   saveProducts(products);
   storage.pushLog('product_deleted', { productId: id });
+  remoteMutate('products', 'DELETE', {}, id);
 }
 export function duplicateProduct(id) {
   const source = getProducts().find(p => p.id === id);

@@ -1,4 +1,5 @@
 {
+  "$schema": "node_modules/wrangler/config-schema.json",
   "name": "vitrine-digital-ultracell",
   "pages_build_output_dir": ".",
   "compatibility_date": "2026-04-21",
@@ -6,8 +7,11 @@
     {
       "binding": "DB",
       "database_name": "vitrine-ultracell-db",
-      "database_id": "76c729db-5134-4761-881b-3e4d00b69204",
-      "preview_database_id": "COLE_AQUI_O_UUID_REAL"
+      "database_id": "SUBSTITUA_PELO_DATABASE_ID_DO_D1"
     }
-  ]
+  ],
+  "vars": {
+    "PIX_KEY": "000.000.000-00",
+    "APP_NAME": "Vitrine Digital / ULTRACELL Peças"
+  }
 }
