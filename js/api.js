@@ -18,7 +18,44 @@ async function request(path, options = {}) {
   return data;
 }
 
+function normalizeActive(value) {
+  if (value === undefined || value === null || value === '') return true;
+  if (typeof value === 'boolean') return value;
+  const raw = String(value).trim().toLowerCase();
+  return !['0', 'false', 'inactive', 'inativo', 'no', 'não', 'nao'].includes(raw);
+}
+
+function normalizeDeliveryType(value = '') {
+  const raw = String(value || '').trim().toLowerCase();
+  if (['delivery', 'entrega', 'deliveries'].includes(raw)) return 'entrega';
+  if (['pickup', 'retirada', 'retirar'].includes(raw)) return 'retirada';
+  return raw || 'retirada';
+}
+
+function parseMaybeJson(value, fallback = []) {
+  if (Array.isArray(value)) return value;
+  if (!value || typeof value !== 'string') return fallback;
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : fallback;
+  } catch {
+    return String(value).split(/[\n;,]+/).map((line) => line.trim()).filter(Boolean);
+  }
+}
+
+function extractColorFromName(name = '') {
+  const text = String(name || '');
+  const match = text.match(/(?:\s-\s)?cor:\s*([^|\n\r]+)/i) || text.match(/\s-\s([^\-]+)$/i);
+  return match ? String(match[1] || '').trim() : '';
+}
+
+function stripColorFromName(name = '') {
+  return String(name || '').replace(/\s*-?\s*cor:\s*[^|\n\r]+/i, '').trim();
+}
+
 function mapProduct(product = {}) {
+  const availabilityStatus = product.availability_status || product.availabilityStatus || 'available';
+  const colors = product.colors || product.colorOptions || product.colors_json || product.colorsJson || product.color_options || product.color_list || [];
   return {
     id: product.id,
     brand: product.brand || '',
@@ -28,9 +65,10 @@ function mapProduct(product = {}) {
     price: Number(product.price || 0),
     code: product.internal_code || product.code || '',
     image: product.image_url || product.image || '',
-    active: true,
-    availabilityStatus: product.availability_status || product.availabilityStatus || 'available',
-    inStock: (product.availability_status || product.availabilityStatus || 'available') === 'available'
+    active: normalizeActive(product.active),
+    colors: parseMaybeJson(colors, []),
+    availabilityStatus,
+    inStock: availabilityStatus === 'available'
   };
 }
 
@@ -56,16 +94,25 @@ function mapUser(user = {}) {
 }
 
 function mapOrder(order = {}) {
-  const items = (order.items || []).map(item => ({
-    id: item.id,
-    productId: item.product_id || item.productId,
-    product_id: item.product_id || item.productId,
-    name: item.name,
-    quantity: Number(item.quantity || 0),
-    unitPrice: Number(item.unit_price ?? item.unitPrice ?? 0),
-    unit_price: Number(item.unit_price ?? item.unitPrice ?? 0),
-    subtotal: Number(item.subtotal || 0)
-  }));
+  const items = (order.items || []).map(item => {
+    const rawName = item.name || item.product_name || '';
+    const color = item.color || item.product_color || extractColorFromName(rawName);
+    const baseName = item.product_name || stripColorFromName(rawName) || rawName;
+    const displayName = color && !String(rawName).toLowerCase().includes('cor:') ? `${baseName} - Cor: ${color}` : rawName;
+    return {
+      id: item.id,
+      productId: item.product_id || item.productId,
+      product_id: item.product_id || item.productId,
+      name: displayName || baseName,
+      baseName,
+      color,
+      quantity: Number(item.quantity || 0),
+      unitPrice: Number(item.unit_price ?? item.unitPrice ?? 0),
+      unit_price: Number(item.unit_price ?? item.unitPrice ?? 0),
+      subtotal: Number(item.subtotal || 0)
+    };
+  });
+  const deliveryType = normalizeDeliveryType(order.delivery_type || order.deliveryType || 'retirada');
   return {
     id: order.id,
     userId: order.user_id || order.userId,
@@ -75,13 +122,16 @@ function mapOrder(order = {}) {
     address: order.address || '',
     items,
     total: Number(order.total || 0),
-    deliveryType: order.delivery_type || order.deliveryType || 'retirada',
+    deliveryType,
+    delivery_type: deliveryType,
     paymentMethod: order.payment_method || order.paymentMethod || 'pix',
     paymentStatus: order.payment_status || order.paymentStatus || 'pending',
-    paid: ['paid','pago'].includes(String(order.payment_status || '').toLowerCase()) || Boolean(order.paid),
+    paid: ['paid','pago'].includes(String(order.payment_status || order.paymentStatus || '').toLowerCase()) || Boolean(order.paid),
     needChange: Boolean(Number(order.need_change ?? order.needChange ?? 0)),
     changeFor: Number(order.change_for ?? order.changeFor ?? 0),
     creditUsed: Number(order.credit_used ?? order.creditUsed ?? 0),
+    discount: Number(order.discount ?? order.discount_value ?? order.discountValue ?? 0),
+    gift: order.gift || order.brinde || '',
     notes: order.notes || '',
     status: order.order_status || order.status || 'aguardando_confirmacao',
     createdAt: order.created_at || order.createdAt || new Date().toISOString(),
@@ -203,7 +253,6 @@ export async function remoteFetchDashboard() {
     return null;
   }
 }
-
 
 export async function remoteResetSystem(payload = {}) {
   const enabled = await detectRemoteEnabled();
