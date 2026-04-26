@@ -25,6 +25,12 @@ function resolveColor(product, requestedColor = '') {
   return getAvailableProductColors(product)[0]?.name || '';
 }
 
+function matchesCartTarget(item, productId, color = '') {
+  const wantedColor = normalizeText(color);
+  if (wantedColor) return cartKey(item.productId, item.color) === cartKey(productId, wantedColor);
+  return item.productId === productId;
+}
+
 export function getCart(userId) {
   return storage.get(`${storage.keys.cartPrefix}${userId}`, []).map(normalizeCartItem).filter(item => item.productId);
 }
@@ -53,14 +59,12 @@ export function addToCart(userId, productId, quantity=1, color='') {
 
 export function updateCartQty(userId, productId, quantity, color='') {
   const nextQty = Math.max(1, Number(quantity || 1));
-  const wantedKey = cartKey(productId, color);
-  const cart = getCart(userId).map(i => cartKey(i.productId, i.color) === wantedKey ? { ...i, quantity: nextQty } : i);
+  const cart = getCart(userId).map(i => matchesCartTarget(i, productId, color) ? { ...i, quantity: nextQty } : i);
   saveCart(userId, cart);
 }
 
 export function removeFromCart(userId, productId, color='') {
-  const wantedKey = cartKey(productId, color);
-  saveCart(userId, getCart(userId).filter(i => cartKey(i.productId, i.color) !== wantedKey));
+  saveCart(userId, getCart(userId).filter(i => !matchesCartTarget(i, productId, color)));
 }
 
 export function clearCart(userId) { saveCart(userId, []); }
